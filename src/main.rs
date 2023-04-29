@@ -8,7 +8,8 @@ use crossterm::{
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
 use std::fs;
-use std::io::{self, stdout};
+use std::io::{self, ErrorKind, stdout};
+use std::path::{Path, PathBuf};
 use tracing_subscriber::fmt::Subscriber;
 use tracing_subscriber::FmtSubscriber;
 use tui::style::{Color, Modifier, Style};
@@ -37,11 +38,11 @@ struct Opts {
 struct FileList<T> {
     state: ListState,
     files: Vec<T>,
-    file_paths: Vec<String>,
+    file_paths: Vec<PathBuf>,
 }
 
 impl<T> FileList<T> {
-    fn new(files: Vec<T>, file_paths: Vec<String>) -> FileList<T> {
+    fn new(files: Vec<T>, file_paths: Vec<PathBuf>) -> FileList<T> {
         let mut state = ListState::default();
         state.select(Some(0));
         FileList {
@@ -100,11 +101,27 @@ fn main() -> Result<(), Report> {
     // terminal.clear()?;
     // terminal.hide_cursor()?;
 
-    let items = read_current_dir();
+    let items = read_current_dir()?;
+
     let mut file_list = FileList::new(
         items
             .iter()
-            .map(|i| ListItem::new(i.as_str()))
+            .map(|i| ListItem::new({
+                let a_path = i.as_path();
+                let metadata = fs::metadata(&a_path).unwrap();
+                let suffix = if metadata.is_dir(){
+                    "/"
+                }else{
+                    ""
+                };
+                let prefix = i.to_str().unwrap_or("Invalid utf-8 path");
+                let stripped_pfx = if prefix.len()>2{
+                   prefix.replace("./", "")
+                }else{
+                    prefix.to_string()
+                };
+                format!("{}{}", stripped_pfx, suffix)
+            }))
             .collect::<Vec<ListItem>>(),
         items.clone(),
     );
@@ -190,16 +207,23 @@ fn init_logging(opts: Opts) -> Subscriber {
     subscriber
 }
 
-fn read_current_dir() -> Vec<String> {
-    let mut items = Vec::new();
-    if let Ok(entries) = fs::read_dir(".") {
-        for entry in entries {
-            if let Ok(entry) = entry {
-                if let Some(file_name) = entry.file_name().to_str() {
-                    items.push(file_name.to_string());
-                }
-            }
+fn read_current_dir() -> Result<Vec<PathBuf>, Report> {
+    let entries = fs::read_dir(".")?;
+    let mut paths:Vec<PathBuf> = entries
+        .filter_map(|entry| entry.ok().map(|e|e.path()))
+        .collect();
+
+    paths.sort_by(|a,b|{
+        let a_path = Path::new(a);
+        let b_path = Path::new(b);
+        let a_metadata = fs::metadata(&a_path).unwrap();
+        let b_metadata = fs::metadata(&b_path).unwrap();
+        match (a_metadata.is_dir(), b_metadata.is_dir()) {
+            (true, true) | (false, false) => a_path.partial_cmp(b_path).unwrap(),
+            (true, false) => std::cmp::Ordering::Less,
+            (false, true) => std::cmp::Ordering::Greater,
         }
-    }
-    items
+
+    });
+    Ok(paths)
 }
