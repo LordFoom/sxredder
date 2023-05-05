@@ -1,14 +1,12 @@
 use clap::*;
 use color_eyre::Report;
 use crossterm::event::read;
-use crossterm::style::Stylize;
 use crossterm::{
-    event::{self, DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
+    event::{DisableMouseCapture, EnableMouseCapture, Event, KeyCode},
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use std::fs;
-use std::io::{self, ErrorKind, stdout};
+use std::{fs, io};
 use std::path::{Path, PathBuf};
 use tracing_subscriber::fmt::Subscriber;
 use tracing_subscriber::FmtSubscriber;
@@ -17,7 +15,7 @@ use tui::widgets::{List, ListItem, ListState, Paragraph};
 use tui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
-    widgets::{Block, Borders, Widget},
+    widgets::{Block, Borders},
     Frame, Terminal,
 };
 
@@ -35,14 +33,20 @@ struct Opts {
     verbose: bool,
 }
 
-struct FileList<T> {
+struct FileList<'a> {
     state: ListState,
-    files: Vec<T>,
+    files: Vec<ListItem<'a>>,
     file_paths: Vec<PathBuf>,
 }
 
-impl<T> FileList<T> {
-    fn new(files: Vec<T>, file_paths: Vec<PathBuf>) -> FileList<T> {
+struct Context{
+    current_dir: String
+}
+
+
+
+impl FileList<'_> {
+    fn new(files: Vec<ListItem>, file_paths: Vec<PathBuf>) -> FileList<'_> {
         let mut state = ListState::default();
         state.select(Some(0));
         FileList {
@@ -83,6 +87,13 @@ impl<T> FileList<T> {
         if !self.files.is_empty() {
             self.state.select(Some(i));
         }
+    }
+
+    fn selected_item(&self)->(ListItem, PathBuf){
+        let idx = self.state.selected().unwrap_or(0);
+        let file = self.files.get(idx).unwrap();
+        let file_path = self.file_paths.get(idx).unwrap();
+        return (file.clone(), file_path.clone());
     }
 }
 
@@ -127,11 +138,11 @@ fn main() -> Result<(), Report> {
     );
 
     let draw_panels = |frame: &mut Frame<CrosstermBackend<io::Stdout>>,
-                       file_list: &mut FileList<ListItem>| {
+                       file_list: &mut FileList| {
         let main_layout = Layout::default()
             .direction(Direction::Vertical)
             .margin(1)
-            .constraints([Constraint::Percentage(90), Constraint::Length(3)].as_ref())
+            .constraints([Constraint::Min(0), Constraint::Length(3)].as_ref())
             .split(frame.size());
         let chunks = Layout::default()
             .direction(Direction::Horizontal)
@@ -139,19 +150,28 @@ fn main() -> Result<(), Report> {
             .constraints([Constraint::Percentage(50), Constraint::Percentage(50)].as_ref())
             .split(main_layout[0]);
 
+        let panel_colors = Color::Cyan;
         let left_block = List::new(file_list.files.clone())
             .block(Block::default().borders(Borders::ALL).title("Dir"))
-            .style(Style::default().fg(Color::Cyan))
+            .style(Style::default().fg(panel_colors))
             .highlight_style(
                 Style::default()
                     .add_modifier(Modifier::ITALIC)
                     .add_modifier(Modifier::BOLD),
             )
             .highlight_symbol("->");
+
+        //if left block is a selected dir, then get the contents of dir and display
+        //display details
+        //display mnemonic depending on if it is a file or a directory
+        let is_dir =
+        // file_list.state.selected()
+        //if a file, then show the first few lines (bindary what about that?
+
         let right_block = Block::default()
-            .title("Panel 2")
+            .title("Details")
             .borders(tui::widgets::Borders::ALL)
-            .border_style(Style::default().fg(Color::Yellow));
+            .border_style(Style::default().fg(panel_colors));
 
         frame.render_stateful_widget(left_block, chunks[0], &mut file_list.state);
         frame.render_widget(right_block, chunks[1]);
@@ -195,7 +215,6 @@ fn main() -> Result<(), Report> {
 }
 
 fn init_logging(opts: Opts) -> Subscriber {
-    let verbose = opts.verbose;
     // Initialize the logging system based on the verbose flag
     let subscriber = FmtSubscriber::builder()
         .with_max_level(if opts.verbose {
@@ -208,7 +227,11 @@ fn init_logging(opts: Opts) -> Subscriber {
 }
 
 fn read_current_dir() -> Result<Vec<PathBuf>, Report> {
-    let entries = fs::read_dir(".")?;
+    read_directory(".")
+}
+
+pub fn read_directory(dir_path:&str)->Result<Vec<PathBuf>, Report> {
+    let entries = fs::read_dir(dir_path)?;
     let mut paths:Vec<PathBuf> = entries
         .filter_map(|entry| entry.ok().map(|e|e.path()))
         .collect();
@@ -226,4 +249,76 @@ fn read_current_dir() -> Result<Vec<PathBuf>, Report> {
 
     });
     Ok(paths)
+
+}
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn setup_file_list() -> FileList<'static> {
+        let files = vec![
+            ListItem::new("file1.txt"),
+            ListItem::new("file2.txt"),
+            ListItem::new("file3.txt"),
+        ];
+        let file_paths = vec![
+            PathBuf::from("file1.txt"),
+            PathBuf::from("file2.txt"),
+            PathBuf::from("file3.txt"),
+        ];
+        FileList::new(files, file_paths)
+    }
+
+    #[test]
+    fn file_list_new() {
+        let file_list = setup_file_list();
+        assert_eq!(file_list.files.len(), 3);
+        assert_eq!(file_list.file_paths.len(), 3);
+        assert_eq!(file_list.state.selected(), Some(0));
+    }
+
+    #[test]
+    fn file_list_move_down() {
+        let mut file_list = setup_file_list();
+        file_list.move_down();
+        assert_eq!(file_list.state.selected(), Some(1));
+        file_list.move_down();
+        assert_eq!(file_list.state.selected(), Some(2));
+        file_list.move_down();
+        assert_eq!(file_list.state.selected(), Some(0));
+    }
+
+    #[test]
+    fn file_list_move_up() {
+        let mut file_list = setup_file_list();
+        file_list.move_up();
+        assert_eq!(file_list.state.selected(), Some(2));
+        file_list.move_up();
+        assert_eq!(file_list.state.selected(), Some(1));
+        file_list.move_up();
+        assert_eq!(file_list.state.selected(), Some(0));
+    }
+
+    #[test]
+    fn file_list_selected_item() {
+        let file_list = setup_file_list();
+        let (file, file_path) = file_list.selected_item();
+        // file.content;
+        let file_content = format!("{:?}", file);
+        assert!(file_content.contains("file1.txt"));
+        assert_eq!(file_path, PathBuf::from("file1.txt"));
+    }
+
+    #[test]
+    fn read_directory_valid() {
+        let paths = read_directory(".").unwrap();
+        assert!(!paths.is_empty());
+        assert!(paths.iter().all(|path| path.exists()));
+    }
+
+    #[test]
+    fn read_directory_invalid() {
+        let result = read_directory("non_existent_directory");
+        assert!(result.is_err());
+    }
 }
