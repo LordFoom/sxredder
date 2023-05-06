@@ -33,14 +33,20 @@ struct Opts {
     verbose: bool,
 }
 
+#[derive(Clone)]
 struct FileList<'a> {
     state: ListState,
     files: Vec<ListItem<'a>>,
     file_paths: Vec<PathBuf>,
 }
 
-struct Context{
-    current_dir: String
+struct SxredderState<'a> {
+    ///where are we in the file system
+    current_dir: String,
+    ///List of files to display
+    file_list: FileList<'a>,
+    ///do we need to update the ui
+    changed: bool,
 }
 
 
@@ -70,7 +76,6 @@ impl FileList<'_> {
         if !self.files.is_empty() {
             self.state.select(Some(i));
         }
-
     }
 
     fn move_up(&mut self) {
@@ -90,7 +95,7 @@ impl FileList<'_> {
     }
 
     fn selected_item(&self)->(ListItem, PathBuf){
-        let idx = self.state.selected().unwrap_or(0);
+        let idx = self.state.selected().unwrap();
         let file = self.files.get(idx).unwrap();
         let file_path = self.file_paths.get(idx).unwrap();
         return (file.clone(), file_path.clone());
@@ -100,7 +105,6 @@ impl FileList<'_> {
 fn main() -> Result<(), Report> {
     let opts = Opts::parse();
     let subscriber = init_logging(opts);
-
     tracing::subscriber::set_global_default(subscriber).expect("setting tracing default failed");
     enable_raw_mode()?;
     let mut stdout = io::stdout();
@@ -114,7 +118,7 @@ fn main() -> Result<(), Report> {
 
     let items = read_current_dir()?;
 
-    let mut file_list = FileList::new(
+    let mut fl = FileList::new(
         items
             .iter()
             .map(|i| ListItem::new({
@@ -137,8 +141,13 @@ fn main() -> Result<(), Report> {
         items.clone(),
     );
 
-    let draw_panels = |frame: &mut Frame<CrosstermBackend<io::Stdout>>,
-                       file_list: &mut FileList| {
+    let mut state = SxredderState {
+        current_dir: ".".to_string(),
+        file_list: fl.clone(),
+        changed: false,
+    };
+    let mut draw_panels = |frame: &mut Frame<CrosstermBackend<io::Stdout>>,
+                       state: &mut SxredderState| {
         let main_layout = Layout::default()
             .direction(Direction::Vertical)
             .margin(1)
@@ -151,7 +160,7 @@ fn main() -> Result<(), Report> {
             .split(main_layout[0]);
 
         let panel_colors = Color::Cyan;
-        let left_block = List::new(file_list.files.clone())
+        let left_block = List::new(state.file_list.files.clone())
             .block(Block::default().borders(Borders::ALL).title("Dir"))
             .style(Style::default().fg(panel_colors))
             .highlight_style(
@@ -164,7 +173,8 @@ fn main() -> Result<(), Report> {
         //if left block is a selected dir, then get the contents of dir and display
         //display details
         //display mnemonic depending on if it is a file or a directory
-        let is_dir =
+        let (li, pb) = fl.selected_item();
+        let is_dir = pb.is_dir();
         // file_list.state.selected()
         //if a file, then show the first few lines (bindary what about that?
 
@@ -173,11 +183,14 @@ fn main() -> Result<(), Report> {
             .borders(tui::widgets::Borders::ALL)
             .border_style(Style::default().fg(panel_colors));
 
-        frame.render_stateful_widget(left_block, chunks[0], &mut file_list.state);
+        frame.render_stateful_widget(left_block, chunks[0], &mut state.file_list.state);
         frame.render_widget(right_block, chunks[1]);
 
         // Mnemonic keys panel
-        let mnemonic_keys_text = "[Q]uit";
+        let mut mnemonic_keys_text = "[Q]uit".to_string();
+        if is_dir {
+            mnemonic_keys_text.push_str("|[Enter] dir");
+        }
         let mnemonic_keys = Paragraph::new(mnemonic_keys_text)
             .style(Style::default().fg(Color::Green))
             .block(
@@ -190,12 +203,12 @@ fn main() -> Result<(), Report> {
     };
 
     loop {
-        terminal.draw(|f| draw_panels(f, &mut file_list))?;
+        terminal.draw(|f| draw_panels(f, &mut state))?;
         if let Event::Key(event) = read()? {
             match event.code {
                 KeyCode::Char('q') => break,
-                KeyCode::Up | KeyCode::Char('k') => file_list.move_up(),
-                KeyCode::Down | KeyCode::Char('j') => file_list.move_down(),
+                KeyCode::Up | KeyCode::Char('k') => state.file_list.move_up(),
+                KeyCode::Down | KeyCode::Char('j') => state.file_list.move_down(),
                 _ => continue,
             }
         }
