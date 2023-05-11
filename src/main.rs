@@ -18,6 +18,7 @@ use tui::{
     widgets::{Block, Borders},
     Frame, Terminal,
 };
+use tui::text::{Span, Spans};
 
 #[derive(Parser, Debug)]
 #[command(name = "Sxredder")]
@@ -45,11 +46,50 @@ struct SxredderState<'a> {
     current_dir: String,
     ///List of files to display
     file_list: FileList<'a>,
+    right_pane_content: String,
     ///do we need to update the ui
     changed: bool,
 }
 
 
+impl SxredderState<'_>{
+
+    fn move_down(&mut self) {
+        self.file_list.move_down();
+    }
+
+    fn move_up(&mut self) {
+        self.file_list.move_up();
+    }
+
+    fn selected_item(&self)->(ListItem, PathBuf){
+        self.file_list.selected_item()
+    }
+    ///Create preview on the right hand pane
+    /// * Dir shows file list
+    /// * file shows head of file
+    fn change_preview_pane(&mut self, index: usize) {
+        if let Some(pb) = self.file_list.file_paths.get(index){
+
+            let  spans = if pb.is_dir(){
+                //load the dir
+                let dir_content = read_directory(&pb.as_os_str().to_str().unwrap()).unwrap()
+                                                                                   .into_iter()
+                                                                                   .map(|pb| {
+                                                                                       Spans::from(Span::styled(pb.clone().file_name().unwrap_or("no filename"?) Style::default().fg(Color::Yellow)))
+                                                                                   })
+                    .collect()
+
+                //set the right pane content
+            }else{
+                //TODO get the first few lines of text
+                //stick them into a span
+                Spans::from(Span::styled("FILE CONTENT PLACEHOLDER"), Style::default().fg(Color::Yellow))
+
+            }
+        }
+    }
+}
 
 impl FileList<'_> {
     fn new(files: Vec<ListItem>, file_paths: Vec<PathBuf>) -> FileList<'_> {
@@ -75,6 +115,8 @@ impl FileList<'_> {
         };
         if !self.files.is_empty() {
             self.state.select(Some(i));
+            //change the display on the right
+            self.display_preview(i)
         }
     }
 
@@ -91,6 +133,7 @@ impl FileList<'_> {
         };
         if !self.files.is_empty() {
             self.state.select(Some(i));
+            self.display_preview(i)
         }
     }
 
@@ -100,6 +143,9 @@ impl FileList<'_> {
         let file_path = self.file_paths.get(idx).unwrap();
         return (file.clone(), file_path.clone());
     }
+    ///Create preview on the right hand pane
+    /// * Dir shows file list
+    /// * file shows head of file
 }
 
 fn main() -> Result<(), Report> {
@@ -122,9 +168,10 @@ fn main() -> Result<(), Report> {
         items
             .iter()
             .map(|i| ListItem::new({
+                //should i be doing this directlyh on the path buff?
                 let a_path = i.as_path();
-                let metadata = fs::metadata(&a_path).unwrap();
-                let suffix = if metadata.is_dir(){
+                // let metadata = fs::metadata(&a_path).unwrap();
+                let suffix = if i.is_dir(){
                     "/"
                 }else{
                     ""
@@ -144,6 +191,7 @@ fn main() -> Result<(), Report> {
     let mut state = SxredderState {
         current_dir: ".".to_string(),
         file_list: fl.clone(),
+        right_pane_content: "".to_string(),
         changed: false,
     };
     let mut draw_panels = |frame: &mut Frame<CrosstermBackend<io::Stdout>>,
@@ -207,8 +255,8 @@ fn main() -> Result<(), Report> {
         if let Event::Key(event) = read()? {
             match event.code {
                 KeyCode::Char('q') => break,
-                KeyCode::Up | KeyCode::Char('k') => state.file_list.move_up(),
-                KeyCode::Down | KeyCode::Char('j') => state.file_list.move_down(),
+                KeyCode::Up | KeyCode::Char('k') => state.move_up(),
+                KeyCode::Down | KeyCode::Char('j') => state.move_down(),
                 _ => continue,
             }
         }
@@ -252,9 +300,9 @@ pub fn read_directory(dir_path:&str)->Result<Vec<PathBuf>, Report> {
     paths.sort_by(|a,b|{
         let a_path = Path::new(a);
         let b_path = Path::new(b);
-        let a_metadata = fs::metadata(&a_path).unwrap();
-        let b_metadata = fs::metadata(&b_path).unwrap();
-        match (a_metadata.is_dir(), b_metadata.is_dir()) {
+        // let a_metadata = fs::metadata(&a_path).unwrap();
+        // let b_metadata = fs::metadata(&b_path).unwrap();
+        match (a.is_dir(), b.is_dir()) {
             (true, true) | (false, false) => a_path.partial_cmp(b_path).unwrap(),
             (true, false) => std::cmp::Ordering::Less,
             (false, true) => std::cmp::Ordering::Greater,
