@@ -88,9 +88,10 @@ impl SxredderState<'_> {
                     .collect()
             } else {
                 //TODO get the first few lines of text
+                 let file_string = fs::read_to_string(pb).unwrap_or("<EMPTY>".to_string());
                 //stick them into a span
                 let spans = Spans::from(Span::styled(
-                    "FILE CONTENT PLACEHOLDER",
+                    file_string,
                     Style::default().fg(Color::Yellow),
                 ));
                 let spans_vec = vec![spans];
