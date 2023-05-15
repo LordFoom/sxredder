@@ -6,6 +6,8 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use std::{fs, io};
 use tracing_subscriber::fmt::Subscriber;
@@ -73,29 +75,30 @@ impl SxredderState<'_> {
     /// * file shows head of file
     fn update_preview_pane_content(&mut self, index: usize) {
         if let Some(pb) = self.file_list.file_paths.get(index) {
-             let preview = if pb.is_dir() {
+            let preview = if pb.is_dir() {
                 //load the dir
-                 read_directory(&pb.as_os_str().to_str().unwrap())
+                read_directory(&pb.as_os_str().to_str().unwrap())
                     .unwrap()
                     .into_iter()
                     .map(|pb| {
                         let option = pb.file_name().unwrap().to_str().unwrap().to_string();
-                        Spans::from(Span::styled(
-                            option,
-                            Style::default().fg(Color::Yellow),
-                        ))
+                        Spans::from(Span::styled(option, Style::default().fg(Color::Yellow)))
                     })
                     .collect()
             } else {
                 //TODO get the first few lines of text
-                 let file_string = fs::read_to_string(pb).unwrap_or("<EMPTY>".to_string());
-                //stick them into a span
-                let spans = Spans::from(Span::styled(
-                    file_string,
-                    Style::default().fg(Color::Yellow),
-                ));
-                let spans_vec = vec![spans];
-                 spans_vec
+                let file = File::open(pb).unwrap();
+                let buff = BufReader::new(file);
+                let mut display: Vec<Spans> = buff
+                    .lines()
+                    .into_iter()
+                    .take(10)
+                    .map(|res| res.unwrap())
+                    .map(|line| {
+                        Spans::from(Span::styled(line, Style::default().fg(Color::Yellow)))
+                    })
+                    .collect();
+                display
             };
             self.right_pane_content = Paragraph::new(preview)
                 .alignment(Alignment::Left)
@@ -198,6 +201,7 @@ fn main() -> Result<(), Report> {
         right_pane_content: Paragraph::new(""),
         changed: false,
     };
+    state.update_preview_pane_content(0);
     let draw_panels = |frame: &mut Frame<CrosstermBackend<io::Stdout>>,
                        state: &mut SxredderState| {
         let main_layout = Layout::default()
