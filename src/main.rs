@@ -92,7 +92,7 @@ impl SxredderState<'_> {
                 let mut display: Vec<Spans> = buff
                     .lines()
                     .into_iter()
-                    .take(10)
+                    .take(100)
                     .map(|res| res.unwrap())
                     .map(|line| {
                         Spans::from(Span::styled(line, Style::default().fg(Color::Yellow)))
