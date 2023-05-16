@@ -94,9 +94,7 @@ impl SxredderState<'_> {
                     .into_iter()
                     .take(100)
                     .map(|res| res.unwrap())
-                    .map(|line| {
-                        Spans::from(Span::styled(line, Style::default().fg(Color::Yellow)))
-                    })
+                    .map(|line| Spans::from(Span::styled(line, Style::default().fg(Color::Yellow))))
                     .collect();
                 display
             };
@@ -108,6 +106,30 @@ impl SxredderState<'_> {
 }
 
 impl FileList<'_> {
+    fn from_paths(file_paths: Vec<PathBuf>) -> Self {
+        let items = file_paths
+            .iter()
+            .map(|i| {
+                ListItem::new({
+                    //should i be doing this directlyh on the path buff?
+                    let suffix = if i.is_dir() { "/" } else { "" };
+                    let prefix = i.to_str().unwrap_or("Invalid utf-8 path");
+                    let stripped_pfx = if prefix.len() > 2 {
+                        prefix.replace("./", "")
+                    } else {
+                        prefix.to_string()
+                    };
+                    format!("{}{}", stripped_pfx, suffix)
+                })
+            })
+            .collect::<Vec<ListItem>>();
+
+        Self {
+            state: Default::default(),
+            files: items.clone(),
+            file_paths,
+        }
+    }
     fn new(files: Vec<ListItem>, file_paths: Vec<PathBuf>) -> FileList<'_> {
         let mut state = ListState::default();
         state.select(Some(0));
@@ -152,10 +174,14 @@ impl FileList<'_> {
     }
 
     fn selected_item(&self) -> (ListItem, PathBuf) {
-        let idx = self.state.selected().unwrap();
+        let idx = if let Some(idx) = self.state.selected() {
+            idx
+        } else {
+            0
+        };
         let file = self.files.get(idx).unwrap();
         let file_path = self.file_paths.get(idx).unwrap();
-        return (file.clone(), file_path.clone());
+        (file.clone(), file_path.clone())
     }
 }
 
@@ -175,25 +201,7 @@ fn main() -> Result<(), Report> {
 
     let items = read_current_dir()?;
 
-    let fl = FileList::new(
-        items
-            .iter()
-            .map(|i| {
-                ListItem::new({
-                    //should i be doing this directlyh on the path buff?
-                    let suffix = if i.is_dir() { "/" } else { "" };
-                    let prefix = i.to_str().unwrap_or("Invalid utf-8 path");
-                    let stripped_pfx = if prefix.len() > 2 {
-                        prefix.replace("./", "")
-                    } else {
-                        prefix.to_string()
-                    };
-                    format!("{}{}", stripped_pfx, suffix)
-                })
-            })
-            .collect::<Vec<ListItem>>(),
-        items.clone(),
-    );
+    let fl = FileList::from_paths(items);
 
     let mut state = SxredderState {
         current_dir: ".".to_string(),
@@ -202,6 +210,7 @@ fn main() -> Result<(), Report> {
         changed: false,
     };
     state.update_preview_pane_content(0);
+
     let draw_panels = |frame: &mut Frame<CrosstermBackend<io::Stdout>>,
                        state: &mut SxredderState| {
         let main_layout = Layout::default()
@@ -264,6 +273,12 @@ fn main() -> Result<(), Report> {
                 KeyCode::Char('q') => break,
                 KeyCode::Up | KeyCode::Char('k') => state.move_up(),
                 KeyCode::Down | KeyCode::Char('j') => state.move_down(),
+                KeyCode::Enter => {
+                    let (_li, pb) = state.file_list.selected_item();
+                    if pb.is_dir() {
+                        enter_directory(&mut state, &pb);
+                    }
+                }
                 _ => continue,
             }
         }
@@ -279,6 +294,14 @@ fn main() -> Result<(), Report> {
 
     terminal.clear()?;
     terminal.show_cursor()?;
+    Ok(())
+}
+
+fn enter_directory(state: &mut SxredderState, pb: &PathBuf) -> Result<(), Report> {
+    let new_items = read_directory(pb.to_str().unwrap())?;
+    state.file_list = FileList::from_paths(new_items);
+    state.current_dir = pb.to_str().unwrap().to_string();
+    state.update_preview_pane_content(0);
     Ok(())
 }
 
