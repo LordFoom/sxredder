@@ -6,8 +6,8 @@ use crossterm::{
     execute,
     terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
 };
-use std::fs::File;
-use std::io::{BufRead, BufReader};
+use std::fs::{File, OpenOptions};
+use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::{fs, io};
 use tracing_subscriber::fmt::Subscriber;
@@ -183,6 +183,33 @@ impl FileList<'_> {
         let file_path = self.file_paths.get(idx).unwrap();
         (file.clone(), file_path.clone())
     }
+}
+
+fn shred_file(path_str: &str)->Result<(), io::Error>{
+    let path = Path::new(path_str);
+   //open the file in read/write mode
+    let mut file = OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(path)?;
+
+    //get the length of the file
+    let md = file.metadata()?;
+    let size = md.len() as usize;
+
+    //buffer of x's
+    let x_vec = vec![x;size];
+    //buffer of 0's
+    let zero_vec = vec![0;size];
+
+    //write x's onto the file
+    file.write(&x_vec)?;
+    //write 0's onto the file
+    file.write(&zero_vec)?;
+    //delete the file
+    fs::remove_file(path)?;
+
+    Ok(())
 }
 
 fn main() -> Result<(), Report> {
