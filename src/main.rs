@@ -198,7 +198,7 @@ fn shred_file(path_str: &str)->Result<(), io::Error>{
     let size = md.len() as usize;
 
     //buffer of x's
-    let x_vec = vec![x;size];
+    let x_vec = vec!['x' as u8;size];
     //buffer of 0's
     let zero_vec = vec![0;size];
 
@@ -263,7 +263,7 @@ fn main() -> Result<(), Report> {
             .highlight_symbol("->");
 
         //if left block is a selected dir, then get the contents of dir and display
-        let (_li, pb) = fl.selected_item();
+        let (_li, pb) = state.selected_item();
         let is_dir = pb.is_dir();
         // file_list.state.selected()
         //if a file, then show the first few lines (bindary what about that?
@@ -280,7 +280,9 @@ fn main() -> Result<(), Report> {
         // Mnemonic keys panel
         let mut mnemonic_keys_text = "[Q]uit".to_string();
         if is_dir {
-            mnemonic_keys_text.push_str("|[Enter] dir");
+            mnemonic_keys_text.push_str(" | [Enter] dir");
+        }else{
+            mnemonic_keys_text.push_str(" | s[X]red file");
         }
         let mnemonic_keys = Paragraph::new(mnemonic_keys_text)
             .style(Style::default().fg(Color::Green))
@@ -303,7 +305,7 @@ fn main() -> Result<(), Report> {
                 KeyCode::Enter => {
                     let (_li, pb) = state.file_list.selected_item();
                     if pb.is_dir() {
-                        enter_directory(&mut state, &pb);
+                        enter_directory(&mut state, &pb)?;
                     }
                 }
                 _ => continue,
@@ -370,6 +372,26 @@ pub fn read_directory(dir_path: &str) -> Result<Vec<PathBuf>, Report> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use std::io::Write;
+    use std::path::Path;
+
+    #[test]
+    fn test_shred_file() {
+        let file_path = "test_file.txt";
+        let file_content = "This is a test file content";
+
+        // Create a file to test
+        let mut file = fs::File::create(file_path).unwrap();
+        file.write_all(file_content.as_bytes()).unwrap();
+
+        // Shred the file
+        let shred_result = shred_file(file_path);
+        assert!(shred_result.is_ok());
+
+        // Check if file still exists
+        assert!(!Path::new(file_path).exists());
+    }
 
     fn setup_file_list() -> FileList<'static> {
         let files = vec![
