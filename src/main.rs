@@ -50,8 +50,6 @@ struct SxredderState<'a> {
     ///List of files to display
     file_list: FileList<'a>,
     right_pane_content: Paragraph<'a>,
-    ///do we need to update the ui
-    changed: bool,
 }
 
 impl SxredderState<'_> {
@@ -89,7 +87,7 @@ impl SxredderState<'_> {
                 //TODO get the first few lines of text
                 let file = File::open(pb).unwrap();
                 let buff = BufReader::new(file);
-                let mut display: Vec<Spans> = buff
+                let display: Vec<Spans> = buff
                     .lines()
                     .into_iter()
                     .take(100)
@@ -185,8 +183,8 @@ impl FileList<'_> {
     }
 }
 
-fn shred_file(path_str: &str)->Result<(), io::Error>{
-    let path = Path::new(path_str);
+fn sxred_file(path: &Path) ->Result<(), io::Error>{
+    // let path = Path::new(path_str);
    //open the file in read/write mode
     let mut file = OpenOptions::new()
         .read(true)
@@ -234,7 +232,6 @@ fn main() -> Result<(), Report> {
         current_dir: ".".to_string(),
         file_list: fl.clone(),
         right_pane_content: Paragraph::new(""),
-        changed: false,
     };
     state.update_preview_pane_content(0);
 
@@ -306,6 +303,12 @@ fn main() -> Result<(), Report> {
                     let (_li, pb) = state.file_list.selected_item();
                     if pb.is_dir() {
                         enter_directory(&mut state, &pb)?;
+                    }
+                },
+                KeyCode::Char('x') => {
+                    let (_li, pb) = state.file_list.selected_item();
+                    if pb.is_file() {
+                        sxred_file(pb.as_path())?;
                     }
                 }
                 _ => continue,
@@ -385,8 +388,10 @@ mod tests {
         let mut file = fs::File::create(file_path).unwrap();
         file.write_all(file_content.as_bytes()).unwrap();
 
+
+        let path = Path::new(file_path);
         // Shred the file
-        let shred_result = shred_file(file_path);
+        let shred_result = sxred_file(path);
         assert!(shred_result.is_ok());
 
         // Check if file still exists
