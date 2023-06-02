@@ -68,6 +68,14 @@ impl SxredderState<'_> {
     fn selected_item(&self) -> (ListItem, PathBuf) {
         self.file_list.selected_item()
     }
+
+    // fn update_file_list_pane(&mut self, files: FileList){
+    //     self.file_list = files.clone();
+    // }
+    // fn update_file_list_pane<'a, 'b: 'a>(&'a mut self, files: FileList<'b>){
+    //     self.file_list = files;
+    // }
+
     ///Create preview on the right hand pane
     /// * Dir shows file list
     /// * file shows head of file
@@ -183,22 +191,19 @@ impl FileList<'_> {
     }
 }
 
-fn sxred_file(path: &Path) ->Result<(), io::Error>{
+fn sxred_file(path: &Path) -> Result<(), io::Error> {
     // let path = Path::new(path_str);
-   //open the file in read/write mode
-    let mut file = OpenOptions::new()
-        .read(true)
-        .write(true)
-        .open(path)?;
+    //open the file in read/write mode
+    let mut file = OpenOptions::new().read(true).write(true).open(path)?;
 
     //get the length of the file
     let md = file.metadata()?;
     let size = md.len() as usize;
 
     //buffer of x's
-    let x_vec = vec!['x' as u8;size];
+    let x_vec = vec!['x' as u8; size];
     //buffer of 0's
-    let zero_vec = vec![0;size];
+    let zero_vec = vec![0; size];
 
     //write x's onto the file
     file.write(&x_vec)?;
@@ -278,7 +283,7 @@ fn main() -> Result<(), Report> {
         let mut mnemonic_keys_text = "[Q]uit".to_string();
         if is_dir {
             mnemonic_keys_text.push_str(" | [Enter] dir");
-        }else{
+        } else {
             mnemonic_keys_text.push_str(" | s[X]red file");
         }
         let mnemonic_keys = Paragraph::new(mnemonic_keys_text)
@@ -299,12 +304,16 @@ fn main() -> Result<(), Report> {
                 KeyCode::Char('q') => break,
                 KeyCode::Up | KeyCode::Char('k') => state.move_up(),
                 KeyCode::Down | KeyCode::Char('j') => state.move_down(),
+                KeyCode::Left | KeyCode::Char('h') => {
+                    let (_li, pb) = state.file_list.selected_item();
+                    move_out_of_directory(&mut state, &pb)?;
+                }
                 KeyCode::Enter => {
                     let (_li, pb) = state.file_list.selected_item();
                     if pb.is_dir() {
                         enter_directory(&mut state, &pb)?;
                     }
-                },
+                }
                 KeyCode::Char('x') => {
                     let (_li, pb) = state.file_list.selected_item();
                     if pb.is_file() {
@@ -329,6 +338,21 @@ fn main() -> Result<(), Report> {
     Ok(())
 }
 
+fn move_out_of_directory(state: &mut SxredderState, pb: &PathBuf) -> Result<(), Report> {
+    //get the current directory
+    if let Some(dir) = pb.parent() {
+        //get the parent of the current directory
+        if let Some(parent) = dir.parent() {
+            println!("This is the parent: {}", parent.as_os_str().to_str().unwrap());
+            let directories = read_directory(parent.as_os_str().to_str().unwrap_or("./"))?;
+            let parent_list = FileList::from_paths(directories);
+            state.file_list = parent_list;
+        }
+    }
+
+    Ok(())
+}
+
 fn enter_directory(state: &mut SxredderState, pb: &PathBuf) -> Result<(), Report> {
     let new_items = read_directory(pb.to_str().unwrap())?;
     state.file_list = FileList::from_paths(new_items);
@@ -350,10 +374,12 @@ fn init_logging(opts: Opts) -> Subscriber {
 }
 
 fn read_current_dir() -> Result<Vec<PathBuf>, Report> {
-    read_directory(".")
+    let curr_dir = std::env::current_dir()?;
+    read_directory(curr_dir.as_os_str().to_str().unwrap())
 }
 
 pub fn read_directory(dir_path: &str) -> Result<Vec<PathBuf>, Report> {
+    // println!("reading {dir_path}");
     let entries = fs::read_dir(dir_path)?;
     let mut paths: Vec<PathBuf> = entries
         .filter_map(|entry| entry.ok().map(|e| e.path()))
@@ -387,7 +413,6 @@ mod tests {
         // Create a file to test
         let mut file = fs::File::create(file_path).unwrap();
         file.write_all(file_content.as_bytes()).unwrap();
-
 
         let path = Path::new(file_path);
         // Shred the file
