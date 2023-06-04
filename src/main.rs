@@ -109,6 +109,7 @@ impl SxredderState<'_> {
                 .wrap(Wrap { trim: true });
         }
     }
+
 }
 
 impl FileList<'_> {
@@ -119,13 +120,10 @@ impl FileList<'_> {
                 ListItem::new({
                     //should i be doing this directlyh on the path buff?
                     let suffix = if i.is_dir() { "/" } else { "" };
-                    let prefix = i.to_str().unwrap_or("Invalid utf-8 path");
-                    let stripped_pfx = if prefix.len() > 2 {
-                        prefix.replace("./", "")
-                    } else {
-                        prefix.to_string()
-                    };
-                    format!("{}{}", stripped_pfx, suffix)
+                    let full_file_path = i.to_str().unwrap_or("Invalid utf-8 path");
+                    //now we split the file_path up
+                    let just_the_name = i.as_path().file_name().unwrap().to_str().unwrap();
+                    format!("{}{}", just_the_name, suffix)
                 })
             })
             .collect::<Vec<ListItem>>();
@@ -308,7 +306,7 @@ fn main() -> Result<(), Report> {
                     let (_li, pb) = state.file_list.selected_item();
                     move_out_of_directory(&mut state, &pb)?;
                 }
-                KeyCode::Enter => {
+                KeyCode::Enter | KeyCode::Right | KeyCode::Char('l') => {
                     let (_li, pb) = state.file_list.selected_item();
                     if pb.is_dir() {
                         enter_directory(&mut state, &pb)?;
