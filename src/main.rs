@@ -12,10 +12,11 @@ use std::path::{Path, PathBuf};
 use std::{fs, io};
 use tracing_subscriber::fmt::Subscriber;
 use tracing_subscriber::FmtSubscriber;
-use tui::layout::Alignment;
+use tui::layout::{Alignment, Rect};
 use tui::style::{Color, Modifier, Style};
 use tui::text::{Span, Spans};
-use tui::widgets::{List, ListItem, ListState, Paragraph, Wrap};
+use tui::widgets::canvas::Rectangle;
+use tui::widgets::{Clear, List, ListItem, ListState, Paragraph, Wrap};
 use tui::{
     backend::CrosstermBackend,
     layout::{Constraint, Direction, Layout},
@@ -50,6 +51,7 @@ struct SxredderState<'a> {
     ///List of files to display
     file_list: FileList<'a>,
     right_pane_content: Paragraph<'a>,
+    confirm_delete: bool,
 }
 
 impl SxredderState<'_> {
@@ -109,7 +111,6 @@ impl SxredderState<'_> {
                 .wrap(Wrap { trim: true });
         }
     }
-
 }
 
 impl FileList<'_> {
@@ -189,6 +190,48 @@ impl FileList<'_> {
     }
 }
 
+fn show_warning(path_buf: &PathBuf, f: &mut Frame<B>) -> Result<(), Report> {
+    //divide the screen up into 9 and then draw in the middle
+    let txt = path_buf.as_path().file_name()?.to_str()?;
+    let display = Paragraph::new("Really delete? [Y][N]")
+        .style(Style::default().fg(Color::Red))
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .style(Style::default().fg(Color::Red))
+                .title(txt),
+        );
+
+    let area = popup_area(30, 20, f.size());
+
+    f.render_widget(Clear, area);
+    f.render_widget(display, area);
+
+    Ok(())
+}
+
+fn popup_area(min_horizontal: usize, min_vertical: usize, r: Rect) -> Rect {
+    //vertical into three rows
+    let v = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([
+            Constraint::Percentage(30),
+            Constraint::Min(min_vertical as u16),
+            Constraint::Percentage(70),
+        ])
+        .split(r);
+
+    //now we split the middle one into 3 columns and return the middle one
+    Layout::default()
+        .direction(Direction::Horizontal)
+        .constraints([
+            Constraint::Percentage(30),
+            Constraint::Min(min_horizontal as u16),
+            Constraint::Percentage(70),
+        ])
+        .split(v[1])[1]
+}
+
 fn sxred_file(path: &Path) -> Result<(), io::Error> {
     // let path = Path::new(path_str);
     //open the file in read/write mode
@@ -235,6 +278,8 @@ fn main() -> Result<(), Report> {
         current_dir: ".".to_string(),
         file_list: fl.clone(),
         right_pane_content: Paragraph::new(""),
+        confirm_delete: false,
+        sxred_file: false,
     };
     state.update_preview_pane_content(0);
 
@@ -293,11 +338,33 @@ fn main() -> Result<(), Report> {
                     .border_style(Style::default().fg(Color::Yellow)),
             );
         frame.render_widget(mnemonic_keys, main_layout[1]);
+
+        //show the warning popup if sxredding
+        if state.confirm_delete {
+            show_warning(&pb, frame);
+        }
     };
 
     loop {
         terminal.draw(|f| draw_panels(f, &mut state))?;
-        if let Event::Key(event) = read()? {
+
+        if state.confirm_delete {
+            if let Event::Key(event) = read()? {
+                match event.code {
+                    KeyCode::Char('y') | KeyCode::Char('Y') => {
+                        let (_li, pb) = state.file_list.selected_item();
+                        state.confirm_delete = false;
+                        sxred_file(pb.as_path()).expect("Could not sxred file!");
+                        //TODO show success? at least in status line
+                    },
+                    KeyCode::Char('n') | KeyCode::Char('N') => {
+                        state.confirm_delete = false;
+                    },
+                    _ => (),
+
+                }
+            }
+        }else if let Event::Key(event) = read()? {
             match event.code {
                 KeyCode::Char('q') => break,
                 KeyCode::Up | KeyCode::Char('k') => state.move_up(),
@@ -315,7 +382,7 @@ fn main() -> Result<(), Report> {
                 KeyCode::Char('x') => {
                     let (_li, pb) = state.file_list.selected_item();
                     if pb.is_file() {
-                        sxred_file(pb.as_path())?;
+                        state.confirm_delete = true;
                     }
                 }
                 _ => continue,
@@ -336,12 +403,16 @@ fn main() -> Result<(), Report> {
     Ok(())
 }
 
+///get confirmation before deleting
 fn move_out_of_directory(state: &mut SxredderState, pb: &PathBuf) -> Result<(), Report> {
     //get the current directory
     if let Some(dir) = pb.parent() {
         //get the parent of the current directory
         if let Some(parent) = dir.parent() {
-            println!("This is the parent: {}", parent.as_os_str().to_str().unwrap());
+            println!(
+                "This is the parent: {}",
+                parent.as_os_str().to_str().unwrap()
+            );
             let directories = read_directory(parent.as_os_str().to_str().unwrap_or("./"))?;
             let parent_list = FileList::from_paths(directories);
             state.file_list = parent_list;
