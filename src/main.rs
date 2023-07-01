@@ -10,6 +10,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{BufRead, BufReader, Write};
 use std::path::{Path, PathBuf};
 use std::{fs, io};
+use color_eyre::eyre::eyre;
 use tracing_subscriber::fmt::Subscriber;
 use tracing_subscriber::FmtSubscriber;
 use tui::layout::{Alignment, Rect};
@@ -23,6 +24,7 @@ use tui::{
     widgets::{Block, Borders},
     Frame, Terminal,
 };
+use tui::backend::Backend;
 
 #[derive(Parser, Debug)]
 #[command(name = "Sxredder")]
@@ -190,9 +192,9 @@ impl FileList<'_> {
     }
 }
 
-fn show_warning(path_buf: &PathBuf, f: &mut Frame<B>) -> Result<(), Report> {
+fn show_warning<B:Backend>(path_buf: &PathBuf, f: &mut Frame<B>) -> Result<(), Report> {
     //divide the screen up into 9 and then draw in the middle
-    let txt = path_buf.as_path().file_name()?.to_str()?;
+    let txt = path_buf.as_path().file_name().ok_or(eyre!("No os string"))?.to_str().ok_or(eyre!("No path buf"))?;
     let display = Paragraph::new("Really delete? [Y][N]")
         .style(Style::default().fg(Color::Red))
         .block(
@@ -279,7 +281,6 @@ fn main() -> Result<(), Report> {
         file_list: fl.clone(),
         right_pane_content: Paragraph::new(""),
         confirm_delete: false,
-        sxred_file: false,
     };
     state.update_preview_pane_content(0);
 
