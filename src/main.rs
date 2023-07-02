@@ -249,9 +249,9 @@ fn sxred_file(path: &Path) -> Result<(), io::Error> {
     let zero_vec = vec![0; size];
 
     //write x's onto the file
-    file.write(&x_vec)?;
+    file.write_all(&x_vec)?;
     //write 0's onto the file
-    file.write(&zero_vec)?;
+    file.write_all(&zero_vec)?;
     //delete the file
     fs::remove_file(path)?;
 
@@ -433,14 +433,13 @@ fn enter_directory(state: &mut SxredderState, pb: &PathBuf) -> Result<(), Report
 
 fn init_logging(opts: Opts) -> Subscriber {
     // Initialize the logging system based on the verbose flag
-    let subscriber = FmtSubscriber::builder()
+    FmtSubscriber::builder()
         .with_max_level(if opts.verbose {
             tracing::Level::INFO
         } else {
             tracing::Level::WARN
         })
-        .finish();
-    subscriber
+        .finish()
 }
 
 fn read_current_dir() -> Result<Vec<PathBuf>, Report> {
