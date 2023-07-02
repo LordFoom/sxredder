@@ -356,6 +356,8 @@ fn main() -> Result<(), Report> {
                         let (_li, pb) = state.file_list.selected_item();
                         state.confirm_delete = false;
                         sxred_file(pb.as_path()).expect("Could not sxred file!");
+                        //update the file list
+
                         //TODO show success? at least in status line
                     },
                     KeyCode::Char('n') | KeyCode::Char('N') => {
@@ -425,6 +427,15 @@ fn move_out_of_directory(state: &mut SxredderState, pb: &PathBuf) -> Result<(), 
 
 fn enter_directory(state: &mut SxredderState, pb: &PathBuf) -> Result<(), Report> {
     let new_items = read_directory(pb.to_str().unwrap())?;
+    state.file_list = FileList::from_paths(new_items);
+    state.current_dir = pb.to_str().unwrap().to_string();
+    state.update_preview_pane_content(0);
+    Ok(())
+}
+
+///Re-read the file list from the current directory
+fn update_file_list(state: &mut SxredderState)->Result<(), Report>{
+    let new_items = read_directory(&state.current_dir)?;
     state.file_list = FileList::from_paths(new_items);
     state.current_dir = pb.to_str().unwrap().to_string();
     state.update_preview_pane_content(0);
